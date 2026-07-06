@@ -55,9 +55,9 @@ def run_bash(
             normalized_command,
             cwd=state.workspace,
             shell=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            # text=True,
+            # encoding="utf-8", # cmd子进程是gbk
+            # errors="replace",
             capture_output=True,
             timeout=timeout,
             env=env,
@@ -67,13 +67,13 @@ def run_bash(
             "ok": False,
             "timed_out": True,
             "exit_code": None,
-            "stdout": (exc.stdout or "")[:MAX_OUTPUT_CHARS],
-            "stderr": (exc.stderr or "")[:MAX_OUTPUT_CHARS],
+            "stdout": _decode(exc.stdout or "")[:MAX_OUTPUT_CHARS],
+            "stderr": _decode(exc.stderr or "")[:MAX_OUTPUT_CHARS],
             "duration_ms": round((time.perf_counter() - started) * 1000),
         }
 
-    stdout = completed.stdout[:MAX_OUTPUT_CHARS]
-    stderr = completed.stderr[:MAX_OUTPUT_CHARS]
+    stdout = _decode(completed.stdout)[:MAX_OUTPUT_CHARS]
+    stderr = _decode(completed.stderr)[:MAX_OUTPUT_CHARS]
     return {
         "ok": completed.returncode == 0,
         "timed_out": False,
@@ -136,3 +136,19 @@ def _looks_dangerous(command: str) -> str | None:
         if re.search(pattern, command, re.IGNORECASE):
             return pattern
     return None
+
+
+import locale
+
+
+def _decode(raw: bytes | None) -> str:
+    if not raw:
+        return ""
+    # 优先按 UTF-8 解（Python 子进程 / chcp 65001 场景）
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    # 退回系统默认编码（中文 Windows 上即 GBK/CP936，覆盖 cmd 内建命令）
+    enc = locale.getpreferredencoding(False) or "gbk"
+    return raw.decode(enc, errors="replace")
