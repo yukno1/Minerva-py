@@ -7,6 +7,7 @@ import subprocess
 import time
 from typing import Any
 import locale
+import platform
 
 from minerva.core.state import RuntimeState
 
@@ -22,6 +23,34 @@ DANGEROUS_PATTERNS = [
     r"\breboot\b",
     r">\s*(?:[A-Za-z]:\\|/)",
 ]
+
+
+def bash_tool_description() -> str:
+    system = platform.system().lower()
+    common = (
+        "Run a safe development shell command inside the workspace with timeout and output capture. "
+        "The command already runs with cwd set to the workspace, so use relative paths and do not run cd /workspace, "
+        "cd workspace, or long-lived interactive commands. Prefer cross-platform Python one-liners for file checks."
+    )
+    if system == "windows":
+        return (
+            common
+            + " Current platform: Windows. Commands are executed by cmd.exe, not bash or PowerShell. "
+            "Use Windows cmd syntax: dir for listing, type file.txt for printing a file, copy/move/del for simple file operations, "
+            "&& for chaining, and set VAR=value for environment variables. Do not use POSIX-only tools like tail, grep, sed, awk, "
+            "cat, ls, export, or here-documents unless you implement the behavior with python -c."
+        )
+    if system == "darwin":
+        return (
+            common
+            + " Current platform: macOS. Commands are executed by a POSIX shell. "
+            "Use portable sh/bash-style commands such as ls, cat, grep, tail, export, and python/python3 as available."
+        )
+    return (
+        common
+        + " Current platform: Linux/Unix. Commands are executed by a POSIX shell. "
+        "Use portable sh/bash-style commands such as ls, cat, grep, tail, export, and python/python3 as available."
+    )
 
 
 def run_bash(

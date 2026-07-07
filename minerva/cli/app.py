@@ -41,6 +41,8 @@ def main(
         safe_echo(ctx.get_help())
         raise typer.Exit()
 
-    safe_secho("minerva stage 1: create_agent ReAct loop", fg=typer.colors.MAGENTA)
+    safe_secho(
+        "minerva stage 4: MultiAgent + context compression", fg=typer.colors.MAGENTA
+    )
     for event in stream_agent_events(task, workspace=workspace):
         print_event(event)

@@ -23,6 +23,34 @@ class VerificationResult(TypedDict):
     stderr: str
 
 
+class SourceItem(TypedDict, total=False):
+    title: str
+    url: str
+    content: str
+    score: float
+
+
+class AgentHandoff(TypedDict, total=False):
+    from_agent: str
+    to_agent: str
+    instruction: str
+    result: str
+
+
+class VerificationCheck(TypedDict, total=False):
+    name: str
+    passed: bool
+    detail: str
+
+
+class CompressionEvent(TypedDict, total=False):
+    before_tokens: int
+    after_tokens: int
+    removed_messages: int
+    summary: str
+    next_node: str
+
+
 class MinervaGraphState(TypedDict, total=False):
     task: str
     runtime: RuntimeState
@@ -37,5 +65,17 @@ class MinervaGraphState(TypedDict, total=False):
     max_attempts: int
     final_answer: str
     last_actor_summary: str
+    research_notes: str
+    sources: list[SourceItem]
+    agent_handoffs: list[AgentHandoff]
+    code_agent_summary: str
+    verifier_summary: str
+    verification_checks: list[VerificationCheck]
+    context_summary: str
+    context_token_count: int
+    context_token_limit: int
+    context_should_compress: bool
+    context_next_node: str
+    compression_events: list[CompressionEvent]
     last_error: str
     metadata: dict[str, Any]

@@ -79,7 +79,7 @@ def print_custom_event(event: dict[str, Any]) -> None:
         console.print(
             Panel(
                 _format_args(event.get("args", {})),
-                title=f"Tool Call · {event.get('name')}",
+                title=f"Tool Call · {event.get('node', 'agent')} · {event.get('name')}",
                 border_style="magenta",
                 box=box.ROUNDED,
             )
@@ -93,11 +93,37 @@ def print_custom_event(event: dict[str, Any]) -> None:
         console.print(
             Panel(
                 _format_tool_result(result),
-                title=f"Tool Result · {event.get('name')}",
+                title=f"Tool Result · {event.get('node', 'agent')} · {event.get('name')}",
                 border_style=style,
                 box=box.ROUNDED,
             )
         )
+        return
+    if event_type == "handoff":
+        render_handoff(event)
+        return
+    if event_type == "handoff_result":
+        render_handoff_result(event)
+        return
+    if event_type == "search_results":
+        render_sources(
+            event.get("sources", []),
+            title=f"searchAgent · {event.get('query', '')}",
+            answer=event.get("answer", ""),
+        )
+        return
+    if event_type == "search_summary":
+        render_sources(
+            event.get("sources", []),
+            title="searchAgent Summary",
+            answer=event.get("summary", ""),
+        )
+        return
+    if event_type == "context_monitor":
+        render_context_monitor(event)
+        return
+    if event_type == "context_compression":
+        render_context_compression(event)
         return
     console.print(Panel(_shorten(event, 1000), title="Event", box=box.ROUNDED))
 
@@ -113,18 +139,24 @@ def print_graph_event(payload: dict[str, Any]) -> None:
             continue
         if node == "planner":
             render_plan(update, title="Planner", border_style="cyan")
-        elif node == "actor":
-            summary = update.get("last_actor_summary")
+        elif node in {"actor", "codeAgent"}:
+            summary = update.get("code_agent_summary") or update.get(
+                "last_actor_summary"
+            )
             if summary:
                 console.print(
                     Panel(
                         _shorten(summary, 1200),
-                        title="Actor Summary",
+                        title="codeAgent Summary",
                         border_style="cyan",
                     )
                 )
         elif node == "verifier":
             render_verifier(update)
+        elif node == "context_monitor":
+            render_context_monitor(update)
+        elif node == "context_compressor":
+            render_context_compression(update)
         elif node == "final":
             render_final(update)
         else:
@@ -206,6 +238,98 @@ def render_final(update: dict[str, Any]) -> None:
             _shorten(answer, 2000), title="Final", border_style=style, box=box.ROUNDED
         )
     )
+
+
+def render_context_monitor(update: dict[str, Any]) -> None:
+    should = bool(update.get("context_should_compress", update.get("should_compress")))
+    token_count = update.get("context_token_count", update.get("token_count", 0))
+    token_limit = update.get("context_token_limit", update.get("token_limit", 0))
+    next_node = update.get("context_next_node", update.get("next_node", ""))
+    message_count = update.get("message_count")
+    lines = [
+        f"tokens: {token_count} / {token_limit}",
+        f"compress: {should}",
+        f"next: {next_node}",
+    ]
+    if message_count is not None:
+        lines.append(f"messages: {message_count}")
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title="Context Monitor",
+            border_style="yellow" if should else "blue",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def render_context_compression(update: dict[str, Any]) -> None:
+    events = update.get("compression_events")
+    if events:
+        event = events[-1]
+    else:
+        event = update
+    lines = [
+        f"tokens: {event.get('before_tokens')} -> {event.get('after_tokens')}",
+        f"removed messages: {event.get('removed_messages')}",
+        f"next: {event.get('next_node')}",
+    ]
+    summary = event.get("summary")
+    if summary:
+        lines.append("summary:\n" + _shorten(summary, 900))
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title="Context Compression",
+            border_style="yellow",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def render_handoff(event: dict[str, Any]) -> None:
+    title = f"Handoff · {event.get('from', 'agent')} -> {event.get('to', 'agent')}"
+    console.print(
+        Panel(
+            _shorten(event.get("instruction", ""), 900),
+            title=title,
+            border_style="blue",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def render_handoff_result(event: dict[str, Any]) -> None:
+    title = f"Return · {event.get('from', 'agent')} -> {event.get('to', 'agent')}"
+    console.print(
+        Panel(
+            _shorten(event.get("result", ""), 1200),
+            title=title,
+            border_style="cyan",
+            box=box.ROUNDED,
+        )
+    )
+
+
+def render_sources(
+    sources: list[dict[str, Any]], *, title: str, answer: str = ""
+) -> None:
+    table = Table(box=box.SIMPLE_HEAVY, header_style="bold")
+    table.add_column("Title")
+    table.add_column("URL")
+    table.add_column("Snippet")
+    for source in sources[:6]:
+        table.add_row(
+            _shorten(source.get("title", ""), 48),
+            _shorten(source.get("url", ""), 58),
+            _shorten(source.get("content", ""), 120),
+        )
+    body = Table.grid(expand=True)
+    if answer:
+        body.add_row(Text(_shorten(answer, 900), style="bold"))
+    if sources:
+        body.add_row(table)
+    console.print(Panel(body, title=title, border_style="blue", box=box.ROUNDED))
 
 
 def _format_args(args: Any) -> str:

@@ -1,5 +1,10 @@
 .minerva/
+
 **/__pycache__/
 *.py[cod]
-dist/
 .pytest_cache/
+
+dist/
+
+milvus-store/
+chroma-store/
