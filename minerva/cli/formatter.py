@@ -1,30 +1,46 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
-import typer
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+console = Console()
+
+STATUS_SYMBOLS = {
+    "pending": "[ ]",
+    "in_progress": "[>]",
+    "completed": "[x]",
+    "blocked": "[!]",
+}
+
+STATUS_STYLES = {
+    "pending": "dim",
+    "in_progress": "bold yellow",
+    "completed": "bold green",
+    "blocked": "bold red",
+}
 
 
-def safe_echo(message: Any = "", **kwargs: Any) -> None:
-    text = str(message)
-    try:
-        typer.echo(text, **kwargs)
-    except UnicodeEncodeError:
-        safe = text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
-        typer.echo(safe, **kwargs)
+def safe_echo(message: Any = "", **_: Any) -> None:
+    console.print(str(message))
 
 
 def safe_secho(message: Any = "", **kwargs: Any) -> None:
-    text = str(message)
-    try:
-        typer.secho(text, **kwargs)
-    except UnicodeEncodeError:
-        safe = text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
-        typer.secho(safe, **kwargs)
+    color = kwargs.get("fg") or kwargs.get("style")
+    console.print(str(message), style=color)
 
 
 def _shorten(value: Any, limit: int = 260) -> str:
-    text = str(value)
+    text = (
+        value
+        if isinstance(value, str)
+        else json.dumps(value, ensure_ascii=False, default=str)
+    )
     if len(text) <= limit:
         return text
     return text[: limit - 3] + "..."
@@ -33,36 +49,180 @@ def _shorten(value: Any, limit: int = 260) -> str:
 def print_event(event: dict[str, Any]) -> None:
     event_type = event.get("type")
     if event_type == "workspace":
-        safe_secho(f"workspace: {event['path']}", fg=typer.colors.BLUE)
+        console.print(
+            Panel(
+                str(event["path"]),
+                title="Workspace",
+                border_style="blue",
+                box=box.ROUNDED,
+            )
+        )
         return
-
-    if event_type != "agent_event":
-        safe_echo(_shorten(event))
+    if event_type == "custom_event":
+        print_custom_event(event["event"])
         return
+    if event_type == "graph_event":
+        print_graph_event(event["event"])
+        return
+    console.print(_shorten(event))
 
-    payload = event["event"]
+
+def print_custom_event(event: dict[str, Any]) -> None:
+    event_type = event.get("type")
+    if event_type == "plan_snapshot":
+        render_plan(event, title=f"Plan Snapshot · {event.get('node', 'graph')}")
+        return
+    if event_type == "todo_update":
+        render_plan(event, title="Todo Updated", border_style="yellow")
+        return
+    if event_type == "tool_call":
+        console.print(
+            Panel(
+                _format_args(event.get("args", {})),
+                title=f"Tool Call · {event.get('name')}",
+                border_style="magenta",
+                box=box.ROUNDED,
+            )
+        )
+        return
+    if event_type == "tool_result":
+        result = event.get("result")
+        style = "green"
+        if isinstance(result, dict) and result.get("ok") is False:
+            style = "red"
+        console.print(
+            Panel(
+                _format_tool_result(result),
+                title=f"Tool Result · {event.get('name')}",
+                border_style=style,
+                box=box.ROUNDED,
+            )
+        )
+        return
+    console.print(Panel(_shorten(event, 1000), title="Event", box=box.ROUNDED))
+
+
+def print_graph_event(payload: dict[str, Any]) -> None:
     if not isinstance(payload, dict):
-        safe_echo(_shorten(payload))
+        console.print(_shorten(payload))
         return
 
     for node, update in payload.items():
-        safe_secho(f"\n[{node}]", fg=typer.colors.CYAN)
-        messages = update.get("messages") if isinstance(update, dict) else None
-        if not messages:
-            safe_echo(_shorten(update))
+        if not isinstance(update, dict):
+            console.print(Panel(_shorten(update), title=str(node), box=box.ROUNDED))
             continue
-        for message in messages:
-            tool_calls = getattr(message, "tool_calls", None)
-            name = getattr(message, "name", None)
-            content = getattr(message, "content", "")
-            if tool_calls:
-                for call in tool_calls:
-                    safe_secho(
-                        f"tool call -> {call.get('name')}", fg=typer.colors.YELLOW
+        if node == "planner":
+            render_plan(update, title="Planner", border_style="cyan")
+        elif node == "actor":
+            summary = update.get("last_actor_summary")
+            if summary:
+                console.print(
+                    Panel(
+                        _shorten(summary, 1200),
+                        title="Actor Summary",
+                        border_style="cyan",
                     )
-                    safe_echo(_shorten(call.get("args", {})))
-            elif name:
-                safe_secho(f"tool result <- {name}", fg=typer.colors.GREEN)
-                safe_echo(_shorten(content, 900))
-            elif content:
-                safe_echo(_shorten(content, 1200))
+                )
+        elif node == "verifier":
+            render_verifier(update)
+        elif node == "final":
+            render_final(update)
+        else:
+            console.print(
+                Panel(_shorten(update, 1200), title=str(node), box=box.ROUNDED)
+            )
+
+
+def render_plan(
+    update: dict[str, Any], *, title: str, border_style: str = "cyan"
+) -> None:
+    plan = update.get("plan_summary", "")
+    todos = update.get("todos", [])
+    commands = update.get("verification_commands", [])
+
+    table = Table(box=box.SIMPLE_HEAVY, show_header=True, header_style="bold")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("State", no_wrap=True)
+    table.add_column("Todo")
+    table.add_column("Note", style="dim")
+    for todo in todos:
+        status = todo.get("status", "pending")
+        table.add_row(
+            todo.get("id", ""),
+            Text(
+                STATUS_SYMBOLS.get(status, "[?]"), style=STATUS_STYLES.get(status, "")
+            ),
+            todo.get("content", ""),
+            todo.get("note", ""),
+        )
+
+    command_text = "\n".join(f"  - {command}" for command in commands)
+    body = Table.grid(expand=True)
+    if plan:
+        body.add_row(Text(plan, style="bold"))
+    if todos:
+        body.add_row(table)
+    if commands:
+        body.add_row(Text("Verifier commands\n" + command_text, style="green"))
+    console.print(Panel(body, title=title, border_style=border_style, box=box.ROUNDED))
+
+
+def render_verifier(update: dict[str, Any]) -> None:
+    table = Table(box=box.SIMPLE_HEAVY, header_style="bold")
+    table.add_column("Command")
+    table.add_column("Exit", justify="right")
+    table.add_column("Status")
+    table.add_column("Output")
+    for result in update.get("verification_results", []):
+        ok = bool(result.get("ok"))
+        status = Text(
+            "PASS" if ok else "FAIL", style="bold green" if ok else "bold red"
+        )
+        output = result.get("stdout") or result.get("stderr") or ""
+        table.add_row(
+            result.get("command", ""),
+            str(result.get("exit_code")),
+            status,
+            _shorten(output, 240),
+        )
+    footer = f"passed={update.get('passed')} | attempts={update.get('attempts')}"
+    panel_grid = Table.grid(expand=True)
+    panel_grid.add_row(table)
+    panel_grid.add_row(Text(footer, style="yellow"))
+    console.print(
+        Panel(
+            panel_grid,
+            title="Verifier",
+            border_style="green" if update.get("passed") else "red",
+        )
+    )
+
+
+def render_final(update: dict[str, Any]) -> None:
+    answer = update.get("final_answer", "")
+    style = "green" if "PASSED" in answer else "red"
+    console.print(
+        Panel(
+            _shorten(answer, 2000), title="Final", border_style=style, box=box.ROUNDED
+        )
+    )
+
+
+def _format_args(args: Any) -> str:
+    return _shorten(args, 900)
+
+
+def _format_tool_result(result: Any) -> str:
+    if not isinstance(result, dict):
+        return _shorten(result, 900)
+    keys = ["ok", "type", "path", "exit_code", "timed_out", "duration_ms", "error"]
+    lines = [f"{key}: {result[key]}" for key in keys if key in result]
+    if "stdout" in result and result["stdout"]:
+        lines.append("stdout:\n" + _shorten(result["stdout"], 500))
+    if "stderr" in result and result["stderr"]:
+        lines.append("stderr:\n" + _shorten(result["stderr"], 500))
+    if "todos" in result:
+        lines.append(f"todos: {len(result['todos'])} item(s)")
+    if not lines:
+        lines.append(_shorten(result, 900))
+    return "\n".join(lines)

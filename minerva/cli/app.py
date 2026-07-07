@@ -7,9 +7,9 @@ from typing import Annotated
 import typer
 
 from minerva.cli.formatter import print_event, safe_echo, safe_secho
-from minerva.core.ReAct import stream_agent_events
+from minerva.core.plan_exe import stream_agent_events
 
-app = typer.Typer(help="mokioclaw: a teaching-first mini CodeAgent.")
+app = typer.Typer(help="minerva: a mini Agent.")
 
 
 def configure_console() -> None:

@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import time
 from typing import Any
+import locale
 
 from minerva.core.state import RuntimeState
 
@@ -136,9 +137,6 @@ def _looks_dangerous(command: str) -> str | None:
         if re.search(pattern, command, re.IGNORECASE):
             return pattern
     return None
-
-
-import locale
 
 
 def _decode(raw: bytes | None) -> str:
