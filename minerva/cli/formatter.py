@@ -119,6 +119,9 @@ def print_custom_event(event: dict[str, Any]) -> None:
             answer=event.get("summary", ""),
         )
         return
+    if event_type == "memory_snapshot":
+        render_memory_snapshot(event)
+        return
     if event_type == "context_monitor":
         render_context_monitor(event)
         return
@@ -153,6 +156,8 @@ def print_graph_event(payload: dict[str, Any]) -> None:
                 )
         elif node == "verifier":
             render_verifier(update)
+        elif node == "memory_snapshot":
+            render_memory_snapshot(update)
         elif node == "context_monitor":
             render_context_monitor(update)
         elif node == "context_compressor":
@@ -330,6 +335,31 @@ def render_sources(
     if sources:
         body.add_row(table)
     console.print(Panel(body, title=title, border_style="blue", box=box.ROUNDED))
+
+
+def render_memory_snapshot(update: dict[str, Any]) -> None:
+    layers = update.get("layers", {})
+    table = Table(box=box.SIMPLE_HEAVY, header_style="bold")
+    table.add_column("Layer", no_wrap=True)
+    table.add_column("Summary")
+    for name in ("rules", "working_memory", "history_summary_store"):
+        table.add_row(name, _shorten(layers.get(name, ""), 360))
+
+    footer = (
+        f"node={update.get('node', '')} | "
+        f"rules={update.get('rules_count', 0)} | "
+        f"todos={update.get('todo_count', 0)} | "
+        f"sources={update.get('source_count', 0)} | "
+        f"handoffs={update.get('handoff_count', 0)} | "
+        f"notepad={update.get('notepad_exists')} | "
+        f"history={update.get('history_exists')} {update.get('history_path', '')}"
+    )
+    body = Table.grid(expand=True)
+    body.add_row(table)
+    body.add_row(Text(footer, style="yellow"))
+    console.print(
+        Panel(body, title="Memory Snapshot", border_style="cyan", box=box.ROUNDED)
+    )
 
 
 def _format_args(args: Any) -> str:

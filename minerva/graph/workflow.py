@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from minerva.graph.nodes import (
+from minerva.graph.node import (
     context_compressor_node,
     context_compressor_route,
     context_monitor_node,

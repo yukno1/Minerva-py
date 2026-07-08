@@ -12,6 +12,11 @@ from minerva.prompts.code_agent_prompt import CODE_AGENT_PROMPT
 from minerva.providers.ollama import create_model
 from minerva.tools import get_tools
 from minerva.tools.todo_tool import update_todo
+from minerva.graph.memory import (
+    build_layered_memory,
+    format_layered_memory_for_prompt,
+    memory_event,
+)
 
 
 Writer = Callable[[dict[str, Any]], None]
@@ -27,6 +32,9 @@ def run_code_agent(
     runtime = state["runtime"]
     todos = [dict(todo) for todo in state.get("todos", [])]
     writer = writer or (lambda _: None)
+
+    memory = build_layered_memory({**state, "todos": todos}, node="codeAgent")
+    writer(memory_event(memory, node="codeAgent"))
 
     model = create_model("ornith:9b")
 
@@ -44,7 +52,7 @@ def run_code_agent(
 
     messages = [
         SystemMessage(content=CODE_AGENT_PROMPT),
-        HumanMessage(content=_code_agent_input(state, instruction, todos)),
+        HumanMessage(content=_code_agent_input(state, instruction, memory)),
     ]
     produced_messages: list[Any] = []
     tool_events: list[dict[str, Any]] = []
@@ -149,31 +157,13 @@ def _build_todo_update_tool(todos: list[dict[str, str]]) -> StructuredTool:
 
 
 def _code_agent_input(
-    state: MinervaGraphState, instruction: str, todos: list[dict[str, Any]]
+    state: MinervaGraphState, instruction: str, memory: dict[str, Any]
 ) -> str:
-    todo_text = "\n".join(
-        f"- {todo['id']} [{todo['status']}] {todo['content']}" for todo in todos
-    )
-    criteria_text = "\n".join(
-        f"- {item}" for item in state.get("acceptance_criteria", [])
-    )
-    command_text = "\n".join(
-        f"- {command}" for command in state.get("verification_commands", [])
-    )
-    source_text = "\n".join(
-        f"- {source.get('title', '')}: {source.get('url', '')}"
-        for source in state.get("sources", [])
-    )
     return (
         f"Task: {state['task']}\n\n"
         f"Planner instruction:\n{instruction}\n\n"
-        f"Plan: {state.get('plan_summary', '')}\n\n"
-        f"Todos:\n{todo_text}\n\n"
-        f"Acceptance criteria:\n{criteria_text}\n\n"
-        f"Verification commands:\n{command_text}\n\n"
-        f"Research notes:\n{state.get('research_notes', '')}\n\n"
-        f"Sources:\n{source_text}\n\n"
-        f"Previous verifier failure:\n{state.get('last_error', '')}"
+        "Layered memory snapshot:\n"
+        f"{format_layered_memory_for_prompt(memory)}"
     )
 
 

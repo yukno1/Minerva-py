@@ -37,6 +37,12 @@ class AgentHandoff(TypedDict, total=False):
     result: str
 
 
+class LayeredMemory(TypedDict, total=False):
+    rules: dict[str, Any]
+    working_memory: dict[str, Any]
+    history_summary_store: dict[str, Any]
+
+
 class VerificationCheck(TypedDict, total=False):
     name: str
     passed: bool
@@ -77,5 +83,7 @@ class MinervaGraphState(TypedDict, total=False):
     context_should_compress: bool
     context_next_node: str
     compression_events: list[CompressionEvent]
+    memory_snapshot: LayeredMemory
+    history_summary: str
     last_error: str
     metadata: dict[str, Any]

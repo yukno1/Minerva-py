@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from minerva.core.state import RuntimeState
+
 VALID_TODO_STATUSES = {"pending", "in_progress", "completed", "blocked"}
+TODO_FILE = "TODO.md"
 
 
 def write_todos(
@@ -55,6 +58,64 @@ def update_todo(
         "note": note,
         "todos": updated,
     }
+
+
+def persist_todos(
+    state: RuntimeState,
+    todos: list[dict[str, Any]],
+    acceptance_criteria: list[str] | None = None,
+    verification_commands: list[str] | None = None,
+    plan_summary: str = "",
+) -> dict[str, Any]:
+    path = state.assert_workspace_path(state.workspace / TODO_FILE)
+    content = render_todo_markdown(
+        todos, acceptance_criteria or [], verification_commands or [], plan_summary
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    state.record_read(path, complete=True)
+    return {
+        "ok": True,
+        "path": TODO_FILE,
+        "lines": len(content.splitlines()),
+        "todos": todos,
+    }
+
+
+def render_todo_markdown(
+    todos: list[dict[str, Any]],
+    acceptance_criteria: list[str],
+    verification_commands: list[str],
+    plan_summary: str = "",
+) -> str:
+    lines = ["# MokioClaw Todo", ""]
+    if plan_summary:
+        lines.extend(["## Plan", "", plan_summary, ""])
+    lines.extend(["## Todos", ""])
+    if todos:
+        for todo in todos:
+            status = str(todo.get("status", "pending"))
+            box = {
+                "pending": " ",
+                "in_progress": "-",
+                "completed": "x",
+                "blocked": "!",
+            }.get(status, " ")
+            note = str(todo.get("note", ""))
+            note_text = f" — {note}" if note else ""
+            lines.append(
+                f"- [{box}] **{todo.get('id', '')}** `{status}` {todo.get('content', '')}{note_text}"
+            )
+    else:
+        lines.append("- [ ] No todos yet.")
+    if acceptance_criteria:
+        lines.extend(["", "## Acceptance Criteria", ""])
+        lines.extend(f"- {item}" for item in acceptance_criteria)
+    if verification_commands:
+        lines.extend(["", "## Verification Commands", ""])
+        lines.extend(f"- `{command}`" for command in verification_commands)
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _normalize_items(items: Any) -> list[str]:

@@ -82,7 +82,6 @@ def web_search(
                     doc_id = str(uuid4())
                     docs.append(doc)
                     ids.append(doc_id)
-                    print(chunk)
 
         except Exception as e:
             print(f"抓取失败: {e}")
